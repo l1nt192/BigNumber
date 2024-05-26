@@ -1,10 +1,20 @@
 #include "big_number.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <math.h>
+#include <ctype.h>
+#include "my_string.h"
+bool IsZeroBN(const BigNumber* bn) 
+{
+    if (bn == NULL) return true;
 
-BigNumber* CreateBN(const char* number) {
+    for (size_t i = 0; i < bn->size; ++i) {
+        if (bn->digits[i] != 0) return false;
+    }
+    return true;
+}
+
+BigNumber* CreateBN(const char* number) 
+{
     if (number == NULL || strlen(number) == 0 || !IsIntString(number))
         return NULL;
 
@@ -13,18 +23,21 @@ BigNumber* CreateBN(const char* number) {
         return NULL;
 
     size_t size = strlen(number);
-    if (*number == '-') {
+    if (*number == '-') 
+    {
         bn->size = size - 1;
         bn->is_negative = true;
         number++;
     }
-    else {
+    else 
+    {
         bn->size = size;
         bn->is_negative = false;
     }
 
     bn->digits = (unsigned char*)calloc(bn->size, sizeof(unsigned char));
-    if (bn->digits == NULL) {
+    if (bn->digits == NULL)
+    {
         free(bn);
         return NULL;
     }
@@ -35,15 +48,20 @@ BigNumber* CreateBN(const char* number) {
     return bn;
 }
 
-void DeleteBN(BigNumber** bn) {
+void DeleteBN(BigNumber** bn)
+{
     if (bn == NULL || *bn == NULL)
         return;
+
     free((*bn)->digits);
+    (*bn)->digits = NULL;
+
     free(*bn);
     *bn = NULL;
 }
 
-void PrintBN(const BigNumber* bn) {
+void PrintBN(const BigNumber* bn)
+{
     if (bn == NULL) {
         printf("BigNumber is empty!\n");
         return;
@@ -58,272 +76,315 @@ void PrintBN(const BigNumber* bn) {
     printf("\n");
 }
 
-int CompareBN(const BigNumber* bn1, const BigNumber* bn2) {
-    if (bn1 == NULL || bn2 == NULL) {
-        return 2;   // Indicate invalid comparison
-    }
-
-    // Compare based on sizes
-    if (bn1->size > bn2->size) {
-        return 1;
-    }
-    else if (bn1->size < bn2->size) {
-        return -1;
-    }
-
-    // Compare based on individual digit values
-    for (size_t i = 0; i < bn1->size; ++i) {
-        if (bn1->digits[i] > bn2->digits[i]) {
-            return 1;
-        }
-        else if (bn1->digits[i] < bn2->digits[i]) {
-            return -1;
-        }
-    }
-
-    return 0;  // Both numbers are equal
-}
-
-BigNumber* SumBN(const BigNumber* bn1, const BigNumber* bn2) {
-    if (bn1 == NULL || bn2 == NULL) {
+BigNumber* AddBN(const BigNumber* a, const BigNumber* b)
+{
+    if (a == NULL || b == NULL)
         return NULL;
+
+    if (a->is_negative && !b->is_negative) 
+    {
+        BigNumber* neg_a = CopyBN(a);
+        neg_a->is_negative = false;
+        BigNumber* result = SubtractBN(b, neg_a);
+        DeleteBN(&neg_a);
+        return result;
     }
 
-    // Если одно из чисел нулевое, вернем копию другого числа
-    if (bn1->size == 1 && bn1->digits[0] == 0) {
-        return CreateBN(bn2->is_negative ? "-" : "");
-    }
-    else if (bn2->size == 1 && bn2->digits[0] == 0) {
-        return CreateBN(bn1->is_negative ? "-" : "");
-    }
-
-    // Если знаки чисел разные, приведем задачу к вычитанию
-    if (bn1->is_negative != bn2->is_negative) {
-        if (bn1->is_negative) {
-            BigNumber* neg_bn1 = CreateBN(bn1->digits[0] == 0 ? bn1->digits + 1 : bn1->digits);
-            BigNumber* result = SubtractBN(neg_bn1, bn2);
-            DeleteBN(&neg_bn1);
-            return result;
-        }
-        else {
-            BigNumber* neg_bn2 = CreateBN(bn2->digits[0] == 0 ? bn2->digits + 1 : bn2->digits);
-            BigNumber* result = SubtractBN(bn1, neg_bn2);
-            DeleteBN(&neg_bn2);
-            return result;
-        }
+    if (!a->is_negative && b->is_negative) 
+    {
+        BigNumber* neg_b = CopyBN(b);
+        neg_b->is_negative = false;
+        BigNumber* result = SubtractBN(a, neg_b);
+        DeleteBN(&neg_b);
+        return result;
     }
 
-    // Если знаки одинаковые, складываем числа по модулю
+    size_t max_size = (a->size > b->size ? a->size : b->size) + 1;
+    unsigned char* result_digits = (unsigned char*)calloc(max_size, sizeof(unsigned char));
+    if (result_digits == NULL)
+        return NULL;
+
+    size_t a_index = a->size;
+    size_t b_index = b->size;
+    size_t res_index = max_size;
+
+    int carry = 0;
+    while (a_index > 0 || b_index > 0 || carry > 0)
+    {
+        int sum = carry;
+        if (a_index > 0) sum += a->digits[--a_index];
+        if (b_index > 0) sum += b->digits[--b_index];
+        result_digits[--res_index] = sum % 10;
+        carry = sum / 10;
+    }
+
     BigNumber* result = (BigNumber*)malloc(sizeof(BigNumber));
     if (result == NULL)
+    {
+        free(result_digits);
+        return NULL;
+    }
+
+    result->size = max_size;
+    result->is_negative = a->is_negative;
+    result->digits = result_digits;
+
+    while (result->size > 1 && result->digits[0] == 0) 
+    {
+        my_memmove(result->digits, result->digits + 1, --result->size);
+    }
+
+    return result;
+}
+
+BigNumber* SubtractBN(const BigNumber* a, const BigNumber* b) 
+{
+    if (a == NULL || b == NULL)
         return NULL;
 
-    result->size = (bn1->size > bn2->size ? bn1->size : bn2->size) + 1;
-    result->digits = (unsigned char*)calloc(result->size, sizeof(unsigned char));
-    if (result->digits == NULL) {
-        free(result);
+    if (a->is_negative && !b->is_negative)
+    {
+        BigNumber* neg_a = CopyBN(a);
+        neg_a->is_negative = false;
+        BigNumber* result = AddBN(neg_a, b);
+        result->is_negative = true;
+        DeleteBN(&neg_a);
+        return result;
+    }
+    if (!a->is_negative && b->is_negative)
+    {
+        BigNumber* neg_b = CopyBN(b);
+        neg_b->is_negative = false;
+        BigNumber* result = AddBN(a, neg_b);
+        DeleteBN(&neg_b);
+        return result;
+    }
+    if (CompareBN(a, b) < 0)
+    {
+        BigNumber* result = SubtractBN(b, a);
+        result->is_negative = !a->is_negative;
+        return result;
+    }
+    size_t max_size = a->size;
+    unsigned char* result_digits = (unsigned char*)calloc(max_size, sizeof(unsigned char));
+    if (result_digits == NULL)
         return NULL;
+
+    size_t a_index = a->size;
+    size_t b_index = b->size;
+    size_t res_index = max_size;
+
+    int borrow = 0;
+    while (a_index > 0 || b_index > 0)
+    {
+        int diff = borrow + (a_index > 0 ? a->digits[--a_index] : 0) - (b_index > 0 ? b->digits[--b_index] : 0);
+        if (diff < 0) 
+        {
+            diff += 10;
+            borrow = -1;
+        }
+        else {
+            borrow = 0;
+        }
+        result_digits[--res_index] = diff;
+    }
+
+    BigNumber* result = (BigNumber*)malloc(sizeof(BigNumber));
+    if (result == NULL)
+    {
+        free(result_digits);
+        return NULL;
+    }
+    result->size = max_size;
+    result->is_negative = a->is_negative;
+    result->digits = result_digits;
+
+    while (result->size > 1 && result->digits[0] == 0) 
+    {
+        my_memmove(result->digits, result->digits + 1, --result->size);
+    }
+
+    return result;
+}
+
+BigNumber* MultiplyBN(const BigNumber* a, const BigNumber* b) 
+{
+    if (a == NULL || b == NULL)
+        return NULL;
+
+    size_t result_size = a->size + b->size;
+    unsigned char* result_digits = (unsigned char*)calloc(result_size, sizeof(unsigned char));
+    if (result_digits == NULL)
+        return NULL;
+
+    for (size_t i = 0; i < a->size; ++i)
+    {
+        for (size_t j = 0; j < b->size; ++j) 
+        {
+            result_digits[i + j + 1] += a->digits[i] * b->digits[j];
+        }
     }
 
     int carry = 0;
-    int sign = bn1->is_negative ? -1 : 1;
-
-    for (int i = 0; i < result->size; ++i) {
-        int digit_sum = carry;
-        if (i < bn1->size)
-            digit_sum += sign * bn1->digits[bn1->size - 1 - i];
-        if (i < bn2->size)
-            digit_sum += sign * bn2->digits[bn2->size - 1 - i];
-
-        if (digit_sum < 0) {
-            digit_sum += 10;
-            carry = -1;
-        }
-        else {
-            carry = digit_sum / 10;
-        }
-
-        result->digits[result->size - 1 - i] = abs(digit_sum) % 10;
-    }
-
-    // Определяем знак результата
-    result->is_negative = carry < 0;
-    if (result->is_negative) {
-        for (int i = 0; i < result->size; ++i) {
-            result->digits[i] = 9 - result->digits[i];
-        }
-        if (result->digits[result->size - 1] != 0) {
-            result->digits[result->size - 1] = 10 - result->digits[result->size - 1];
-        }
-        else {
-            int i = result->size - 2;
-            while (result->digits[i] == 0 && i >= 0) {
-                result->digits[i] = 9;
-                --i;
-            }
-            if (i >= 0)
-                result->digits[i] -= 1;
-        }
-    }
-
-    // Удаляем ведущие нули
-    size_t first_non_zero = 0;
-    while (first_non_zero < result->size && result->digits[first_non_zero] == 0) {
-        first_non_zero++;
-    }
-
-    if (first_non_zero == result->size) {
-        result->size = 1;
-    }
-    else if (first_non_zero > 0) {
-        for (size_t i = first_non_zero; i < result->size; ++i) {
-            result->digits[i - first_non_zero] = result->digits[i];
-        }
-        result->size -= first_non_zero;
-    }
-
-    return result;
-}
-
-
-BigNumber* SubtractBN(const BigNumber* bn1, const BigNumber* bn2) {
-    if (bn1 == NULL || bn2 == NULL) {
-        return NULL;
-    }
-
-    if (bn1->size == 1 && bn1->digits[0] == 0) {
-        BigNumber* neg_bn2 = CreateBN(bn2->digits[0] == 0 ? bn2->digits + 1 : bn2->digits);
-        neg_bn2->is_negative = !bn2->is_negative;
-        return neg_bn2;
-    } else if (bn2->size == 1 && bn2->digits[0] == 0) {
-        return CreateBN(bn1->digits[0] == 0 ? bn1->digits + 1 : bn1->digits);
-    }
-
-    // Если знаки чисел разные, приводим задачу к сложению
-    if (bn1->is_negative != bn2->is_negative)
+    for (size_t i = result_size; i > 0; --i) 
     {
-        BigNumber* neg_bn2 = CreateBN(bn2->digits[0] == 0 ? bn2->digits + 1 : bn2->digits);
-        neg_bn2->is_negative = !bn2->is_negative;
-        BigNumber* result = SumBN(bn1, neg_bn2);
-        DeleteBN(&neg_bn2);
-        return result;
+        result_digits[i - 1] += carry;
+        carry = result_digits[i - 1] / 10;
+        result_digits[i - 1] %= 10;
     }
+
     BigNumber* result = (BigNumber*)malloc(sizeof(BigNumber));
-    if (result == NULL)
-        return NULL;
-
-    result->size = (bn1->size > bn2->size ? bn1->size : bn2->size) + 1;
-    result->digits = (unsigned char*)calloc(result->size, sizeof(unsigned char));
-    if (result->digits == NULL) {
-        free(result);
+    if (result == NULL) {
+        free(result_digits);
         return NULL;
     }
+    result->size = result_size;
+    result->is_negative = a->is_negative != b->is_negative;
+    result->digits = result_digits;
 
-    int borrow = 0;
-    int sign = bn1->is_negative ? -1 : 1;
-
-    for (int i = 0; i < result->size; ++i) {
-        int digit_sub = borrow;
-        if (i < bn1->size)
-            digit_sub += sign * bn1->digits[bn1->size - 1 - i];
-        if (i < bn2->size)
-            digit_sub -= sign * bn2->digits[bn2->size - 1 - i];
-
-        if (digit_sub < 0) {
-            digit_sub += 10;
-            borrow = -1;
-        } else {
-            borrow = 0;
-        }
-
-        result->digits[result->size - 1 - i] = abs(digit_sub) % 10;
-    }
-
-    // Определяем знак результата
-    result->is_negative = borrow < 0;
-    if (result->is_negative) {
-        for (int i = 0; i < result->size; ++i) {
-            result->digits[i] = 9 - result->digits[i];
-        }
-        if (result->digits[result->size - 1] != 0) {
-            result->digits[result->size - 1] = 10 - result->digits[result->size - 1];
-        } else {
-            int i = result->size - 2;
-            while (result->digits[i] == 0 && i >= 0) {
-                result->digits[i] = 9;
-                --i;
-            }
-            if (i >= 0)
-                result->digits[i] -= 1;
-        }
-    }
-
-    // Удаляем ведущие нули
-    size_t first_non_zero = 0;
-    while (first_non_zero < result->size && result->digits[first_non_zero] == 0) {
-        first_non_zero++;
-    }
-
-    if (first_non_zero == result->size) {
-        result->size = 1;
-    } else if (first_non_zero > 0) {
-        for (size_t i = first_non_zero; i < result->size; ++i) {
-            result->digits[i - first_non_zero] = result->digits[i];
-        }
-        result->size -= first_non_zero;
+    while (result->size > 1 && result->digits[0] == 0) {
+        my_memmove(result->digits, result->digits + 1, --result->size);
     }
 
     return result;
 }
-BigNumber* MultiplyBN(const BigNumber* bn1, const BigNumber* bn2) 
+BigNumber* DivideBN(const BigNumber* a, const BigNumber* b)
 {
-    if (bn1 == NULL || bn2 == NULL) {
+    if (a == NULL || b == NULL || IsZeroBN(b)) {
+        printf("Error: Division by zero or invalid input.\n");
         return NULL;
     }
+
+    BigNumber* quotient = CreateBN("0");
+    if (quotient == NULL) {
+        printf("Error: Failed to create quotient.\n");
+        return NULL;
+    }
+
+    BigNumber* remainder = CopyBN(a);
+    if (remainder == NULL) {
+        printf("Error: Failed to copy numerator.\n");
+        DeleteBN(&quotient);
+        return NULL;
+    }
+
+    while (CompareBN(remainder, b) >= 0)
+    {
+        size_t shift = remainder->size - b->size;
+        BigNumber* shifted_b = ShiftLeftBN(b, shift);
+        if (shifted_b == NULL) {
+            printf("Error: Failed to shift divisor.\n");
+            DeleteBN(&quotient);
+            DeleteBN(&remainder);
+            return NULL;
+        }
+
+        BigNumber* one = CreateBN("1");
+        if (one == NULL) {
+            printf("Error: Failed to create one.\n");
+            DeleteBN(&quotient);
+            DeleteBN(&remainder);
+            DeleteBN(&shifted_b);
+            return NULL;
+        }
+
+        BigNumber* one_shifted = ShiftLeftBN(one, shift);
+        DeleteBN(&one);
+        if (one_shifted == NULL) {
+            printf("Error: Failed to shift one.\n");
+            DeleteBN(&quotient);
+            DeleteBN(&remainder);
+            DeleteBN(&shifted_b);
+            return NULL;
+        }
+
+        while (CompareBN(remainder, shifted_b) >= 0) {
+            BigNumber* new_remainder = SubtractBN(remainder, shifted_b);
+            if (new_remainder == NULL) {
+                printf("Error: Failed to subtract shifted divisor from remainder.\n");
+                DeleteBN(&quotient);
+                DeleteBN(&remainder);
+                DeleteBN(&shifted_b);
+                DeleteBN(&one_shifted);
+                return NULL;
+            }
+            DeleteBN(&remainder);
+            remainder = new_remainder;
+
+            BigNumber* new_quotient = AddBN(quotient, one_shifted);
+            if (new_quotient == NULL) {
+                printf("Error: Failed to add to quotient.\n");
+                DeleteBN(&quotient);
+                DeleteBN(&remainder);
+                DeleteBN(&shifted_b);
+                DeleteBN(&one_shifted);
+                return NULL;
+            }
+            DeleteBN(&quotient);
+            quotient = new_quotient;
+        }
+
+        DeleteBN(&shifted_b);
+        DeleteBN(&one_shifted);
+    }
+
+    quotient->is_negative = a->is_negative != b->is_negative;
+    DeleteBN(&remainder);
+    return quotient;
+}
+
+int CompareBN(const BigNumber* a, const BigNumber* b) 
+{
+    if (a->size != b->size)
+        return (int)(a->size - b->size);
+
+    for (size_t i = 0; i < a->size; ++i) {
+        if (a->digits[i] != b->digits[i])
+            return (int)(a->digits[i] - b->digits[i]);
+    }
+
+    return 0;
+}
+
+BigNumber* ShiftLeftBN(const BigNumber* bn, size_t shifts) 
+{
+    if (bn == NULL || shifts == 0)
+        return CopyBN(bn);
 
     BigNumber* result = (BigNumber*)malloc(sizeof(BigNumber));
     if (result == NULL)
         return NULL;
 
-    result->size = bn1->size + bn2->size;
+    result->size = bn->size + shifts;
+    result->is_negative = bn->is_negative;
     result->digits = (unsigned char*)calloc(result->size, sizeof(unsigned char));
     if (result->digits == NULL) {
         free(result);
         return NULL;
     }
 
-    for (int i = 0; i < bn1->size; ++i) {
-        int carry = 0;
-        for (int j = 0; j < bn2->size; ++j) {
-            int mul = bn1->digits[bn1->size - 1 - i] * bn2->digits[bn2->size - 1 - j] + carry + result->digits[result->size - 1 - (i + j)];
-            carry = mul / 10;
-            result->digits[result->size - 1 - (i + j)] = mul % 10;
-        }
-        result->digits[result->size - 1 - (i + bn2->size)] += carry;
-    }
-
-    // Удаляем ведущие нули
-    size_t first_non_zero = 0;
-    while (first_non_zero < result->size && result->digits[first_non_zero] == 0) {
-        first_non_zero++;
-    }
-
-    if (first_non_zero == result->size) {
-        result->size = 1;
-    }
-    else if (first_non_zero > 0) {
-        for (size_t i = first_non_zero; i < result->size; ++i) {
-            result->digits[i - first_non_zero] = result->digits[i];
-        }
-        result->size -= first_non_zero;
-    }
-
-    result->is_negative = bn1->is_negative != bn2->is_negative;
+    my_memcpy(result->digits, bn->digits, bn->size);
 
     return result;
 }
 
+BigNumber* CopyBN(const BigNumber* bn) 
+{
+    if (bn == NULL)
+        return NULL;
 
+    BigNumber* copy = (BigNumber*)malloc(sizeof(BigNumber));
+    if (copy == NULL)
+        return NULL;
 
+    copy->size = bn->size;
+    copy->is_negative = bn->is_negative;
+    copy->digits = (unsigned char*)malloc(copy->size * sizeof(unsigned char));
+    if (copy->digits == NULL) {
+        free(copy);
+        return NULL;
+    }
+    my_memcpy(copy->digits, bn->digits, copy->size);
 
-
+    return copy;
+}
